@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Camera Body Frame -->
+    <path
+        android:fillColor="#E2E8F0"
+        android:pathData="M30,34 L38,34 L41,30 L67,30 L70,34 L78,34 C82.4,34 86,37.6 86,42 L86,72 C86,76.4 82.4,80 78,80 L30,80 C25.6,80 22,76.4 22,72 L22,42 C22,37.6 25.6,34 30,34 Z" />
+
+    <!-- Camera Inner Shutter Circle -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M54,43 A16,16 0 1,0 54,75 A16,16 0 1,0 54,43 Z" />
+
+    <!-- Lens Ring Accent -->
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2.5"
+        android:pathData="M54,46 A13,13 0 1,0 54,72 A13,13 0 1,0 54,46 Z" />
+
+    <!-- Flash dot -->
+    <path
+        android:fillColor="#EF4444"
+        android:pathData="M76,40 A2.5,2.5 0 1,0 76,45 A2.5,2.5 0 1,0 76,40 Z" />
+
+    <!-- Prominent GPS Location Pin in Lens Center -->
+    <!-- Pin Body -->
+    <path
+        android:fillColor="#EF4444"
+        android:pathData="M54,47 C50.5,47 47.7,49.8 47.7,53.3 C47.7,57.7 54,67 54,67 C54,67 60.3,57.7 60.3,53.3 C60.3,49.8 57.5,47 54,47 Z" />
+
+    <!-- Pin Inner Dot -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,51 A2.3,2.3 0 1,0 54,55.6 A2.3,2.3 0 1,0 54,51 Z" />
+
+    <!-- Crosshair ticks around lens representing geospatial alignment -->
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="1.5"
+        android:pathData="M54,39 L54,43 M54,75 L54,79 M38,59 L42,59 M66,59 L70,59" />
+</vector>

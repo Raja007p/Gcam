@@ -1,0 +1,6 @@
+{
+  "name": "GPS Map Camera",
+  "description": "Capture photos with live GPS coordinates, altitude, compass, date-time, and customizable mini map markers directly stamped onto your images.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
