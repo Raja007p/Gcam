@@ -25,6 +25,11 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept Android SDK Licenses and Install Platform
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" || true
+
       - name: Prepare build environment
         run: |
           touch .env
@@ -41,12 +46,6 @@ jobs:
           # Ensure gradlew executable
           chmod +x gradlew
 
-          # If gradle-wrapper.jar was stripped by git, download Gradle directly
-          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo "Installing Gradle..."
-            sudo apt-get update && sudo apt-get install -y gradle
-          fi
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -54,7 +53,7 @@ jobs:
 
       - name: Build Debug APK
         run: |
-          gradle assembleDebug --no-daemon --no-configuration-cache --stacktrace || ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
+          ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
