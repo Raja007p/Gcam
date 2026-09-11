@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.FlashAuto
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
@@ -555,6 +556,37 @@ fun CameraScreen(
                         )
                     }
                 }
+
+                // Map View Style Quick Switch Pill (Standard / Satellite / 3D / Street View)
+                if (stampConfig.showMiniMap) {
+                    Surface(
+                        color = Color(0x99000000),
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Cyan400.copy(alpha = 0.7f)),
+                        modifier = Modifier
+                            .clickable { viewModel.cycleMapStyle() }
+                            .testTag("camera_map_style_quick_pill")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Layers,
+                                contentDescription = "Switch Map Style",
+                                tint = Cyan400,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = stampConfig.mapStyle.badge,
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -576,6 +608,9 @@ fun CameraScreen(
                 onEditNoteClick = {
                     editedNoteText = stampConfig.customNote
                     showNoteDialog = true
+                },
+                onCycleMapStyle = {
+                    viewModel.cycleMapStyle()
                 }
             )
         }

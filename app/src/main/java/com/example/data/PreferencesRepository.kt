@@ -21,7 +21,12 @@ class PreferencesRepository(context: Context) {
     private fun loadConfig(): StampConfig {
         return StampConfig(
             showMiniMap = prefs.getBoolean("show_mini_map", true),
-            mapStyle = MapStyle.valueOf(prefs.getString("map_style", MapStyle.NORMAL_STREET.name) ?: MapStyle.NORMAL_STREET.name),
+            mapStyle = try {
+                val saved = prefs.getString("map_style", MapStyle.NORMAL_STREET.name) ?: MapStyle.NORMAL_STREET.name
+                if (saved == "TERRAIN") MapStyle.VIEW_3D else MapStyle.valueOf(saved)
+            } catch (e: Exception) {
+                MapStyle.NORMAL_STREET
+            },
             showCoordinates = prefs.getBoolean("show_coordinates", true),
             coordinateFormat = CoordinateFormat.valueOf(prefs.getString("coord_format", CoordinateFormat.DMS.name) ?: CoordinateFormat.DMS.name),
             showAltitude = prefs.getBoolean("show_altitude", true),

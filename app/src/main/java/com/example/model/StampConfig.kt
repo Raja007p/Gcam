@@ -10,10 +10,31 @@ enum class AltitudeUnit(val label: String) {
     FEET("Feet (ft)")
 }
 
-enum class MapStyle(val label: String) {
-    NORMAL_STREET("Street / Roads"),
-    SATELLITE("Satellite"),
-    TERRAIN("Terrain / Topo")
+enum class MapStyle(
+    val label: String,
+    val badge: String,
+    val description: String
+) {
+    NORMAL_STREET(
+        "Regular / Standard Map",
+        "MAP",
+        "Official Google Maps road map with streets, roads, and buildings"
+    ),
+    SATELLITE(
+        "Satellite View",
+        "SAT",
+        "Photographic satellite imagery with terrain and street labels"
+    ),
+    VIEW_3D(
+        "3D View",
+        "3D",
+        "3D perspective terrain, elevation contours, and building volumes"
+    ),
+    STREET_VIEW(
+        "Street View",
+        "STREET",
+        "Google Street View coverage and street-level perspective"
+    )
 }
 
 enum class StampPosition(val label: String) {

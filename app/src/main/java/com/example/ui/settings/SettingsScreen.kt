@@ -55,6 +55,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -89,6 +91,7 @@ import com.example.ui.components.StampOverlayView
 import com.example.ui.theme.Amber400
 import com.example.ui.theme.Cyan400
 import com.example.ui.theme.Cyan500
+import com.example.ui.theme.Cyan600
 import com.example.ui.theme.Emerald500
 import com.example.ui.theme.Slate200
 import com.example.ui.theme.Slate400
@@ -276,36 +279,90 @@ fun SettingsScreen(
                 StampOverlayView(
                     location = locationData,
                     config = stampConfig,
-                    modifier = Modifier.border(1.dp, Slate800, RoundedCornerShape(8.dp))
+                    modifier = Modifier.border(1.dp, Slate800, RoundedCornerShape(8.dp)),
+                    onCycleMapStyle = { viewModel.cycleMapStyle() }
                 )
             }
 
-            // Section 1: Mini Map & Location Pin
+            // Section 1: Real Google Mini Map & Pin Marker
             item {
-                SettingsSectionCard(title = "Mini Map & Pin Marker", icon = Icons.Default.Map) {
+                SettingsSectionCard(title = "Real Google Mini Map & Pin", icon = Icons.Default.Map) {
                     SettingToggleRow(
-                        title = "Show Mini Map",
-                        subtitle = "Display Google-style map thumbnail with red location pin",
+                        title = "Show Real Google Mini Map",
+                        subtitle = "Live interactive GPS map centered on your actual current location",
                         checked = stampConfig.showMiniMap,
                         onCheckedChange = { viewModel.updateConfig(stampConfig.copy(showMiniMap = it)) },
                         testTag = "toggle_mini_map"
                     )
 
                     if (stampConfig.showMiniMap) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("Map Theme Style", color = Slate400, fontSize = 12.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MapStyle.values().forEach { style ->
-                                FilterChip(
-                                    selected = stampConfig.mapStyle == style,
-                                    onClick = { viewModel.updateConfig(stampConfig.copy(mapStyle = style)) },
-                                    label = { Text(style.label, fontSize = 12.sp) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Cyan500,
-                                        selectedLabelColor = Color.White
-                                    )
-                                )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Google Map View Type",
+                            color = Cyan400,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MapStyle.entries.forEach { style ->
+                                val isSelected = stampConfig.mapStyle == style
+                                Surface(
+                                    color = if (isSelected) Cyan600.copy(alpha = 0.22f) else Slate800.copy(alpha = 0.5f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        width = if (isSelected) 1.5.dp else 1.dp,
+                                        color = if (isSelected) Cyan400 else Slate700
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { viewModel.updateConfig(stampConfig.copy(mapStyle = style)) }
+                                        .testTag("map_style_${style.name.lowercase()}")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Surface(
+                                            color = if (isSelected) Cyan500 else Slate700,
+                                            shape = RoundedCornerShape(4.dp),
+                                            modifier = Modifier.padding(end = 10.dp)
+                                        ) {
+                                            Text(
+                                                text = style.badge,
+                                                color = Color.White,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                            )
+                                        }
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = style.label,
+                                                color = if (isSelected) Color.White else Slate200,
+                                                fontSize = 13.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                            Text(
+                                                text = style.description,
+                                                color = if (isSelected) Cyan400.copy(alpha = 0.85f) else Slate400,
+                                                fontSize = 11.sp,
+                                                lineHeight = 14.sp
+                                            )
+                                        }
+
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = { viewModel.updateConfig(stampConfig.copy(mapStyle = style)) },
+                                            colors = RadioButtonDefaults.colors(
+                                                selectedColor = Cyan400,
+                                                unselectedColor = Slate400
+                                            )
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

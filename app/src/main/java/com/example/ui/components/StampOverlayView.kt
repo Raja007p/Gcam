@@ -42,9 +42,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.LocationData
+import com.example.model.MapStyle
 import com.example.model.StampBgStyle
 import com.example.model.StampConfig
-import com.example.stamp.MiniMapRenderer
+import com.example.ui.components.RealGoogleMiniMapView
 import com.example.ui.theme.Amber400
 import com.example.ui.theme.Cyan400
 import com.example.ui.theme.Cyan500
@@ -58,7 +59,8 @@ fun StampOverlayView(
     location: LocationData,
     config: StampConfig,
     modifier: Modifier = Modifier,
-    onEditNoteClick: (() -> Unit)? = null
+    onEditNoteClick: (() -> Unit)? = null,
+    onCycleMapStyle: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val isLight = config.bgStyle == StampBgStyle.FROSTED_LIGHT
@@ -117,41 +119,35 @@ fun StampOverlayView(
                         Spacer(modifier = Modifier.height(3.dp))
                     }
 
-                    // Mini map bitmap
-                    val miniMapBitmap = remember(location.latitude, location.longitude, config.mapStyle) {
-                        MiniMapRenderer.generateMiniMapBitmap(
-                            180,
-                            180,
-                            location.latitude,
-                            location.longitude,
-                            config.mapStyle
-                        )
-                    }
-
-                    Image(
-                        bitmap = miniMapBitmap.asImageBitmap(),
-                        contentDescription = "Mini Map with GPS Pin - Tap to open Google Maps",
+                    // Live Interactive Google Mini Map
+                    RealGoogleMiniMapView(
+                        location = location,
+                        mapStyle = config.mapStyle,
                         modifier = Modifier
-                            .size(90.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                            .clickable {
-                                try {
-                                    val mapUri = Uri.parse("geo:${location.latitude},${location.longitude}?q=${location.latitude},${location.longitude}(GPS+Camera+Location)")
-                                    val mapIntent = Intent(Intent.ACTION_VIEW, mapUri).apply {
-                                        setPackage("com.google.android.apps.maps")
-                                    }
-                                    if (mapIntent.resolveActivity(context.packageManager) != null) {
-                                        context.startActivity(mapIntent)
-                                    } else {
-                                        val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}"))
-                                        context.startActivity(webIntent)
-                                    }
-                                } catch (e: Exception) {
+                            .size(92.dp)
+                            .testTag("stamp_google_mini_map"),
+                        onMapClick = {
+                            try {
+                                val mapUri = if (config.mapStyle == MapStyle.STREET_VIEW) {
+                                    Uri.parse("google.streetview:cbll=${location.latitude},${location.longitude}")
+                                } else {
+                                    Uri.parse("geo:${location.latitude},${location.longitude}?q=${location.latitude},${location.longitude}(GPS+Camera+Location)")
+                                }
+                                val mapIntent = Intent(Intent.ACTION_VIEW, mapUri).apply {
+                                    setPackage("com.google.android.apps.maps")
+                                }
+                                if (mapIntent.resolveActivity(context.packageManager) != null) {
+                                    context.startActivity(mapIntent)
+                                } else {
                                     val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}"))
                                     context.startActivity(webIntent)
                                 }
+                            } catch (e: Exception) {
+                                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}"))
+                                context.startActivity(webIntent)
                             }
+                        },
+                        onCycleStyle = onCycleMapStyle
                     )
                 }
             }

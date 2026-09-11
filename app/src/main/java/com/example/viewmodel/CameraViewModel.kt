@@ -25,7 +25,9 @@ import com.example.data.CapturedPhoto
 import com.example.data.LocationSensorManager
 import com.example.data.PreferencesRepository
 import com.example.model.LocationData
+import com.example.model.MapStyle
 import com.example.model.StampConfig
+import com.example.stamp.RealMapTileFetcher
 import com.example.stamp.StampBitmapGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -73,6 +75,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     val uiEvents: SharedFlow<CameraUiEvent> = _uiEvents.asSharedFlow()
 
     init {
+        RealMapTileFetcher.cacheDir = File(application.cacheDir, "map_tiles")
+
         viewModelScope.launch {
             stampConfig.collect { config ->
                 locationSensorManager.updateConfig(config)
@@ -81,6 +85,15 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             photoDao.getAllPhotos().collect { photos ->
                 _latestPhoto.value = photos.firstOrNull()
+            }
+        }
+        // Prefetch real Google Map tile in background whenever location or style updates
+        viewModelScope.launch(Dispatchers.IO) {
+            locationData.collect { loc ->
+                if (loc.latitude != 0.0 && loc.longitude != 0.0) {
+                    val (tX, tY, _) = RealMapTileFetcher.getTileCoords(loc.latitude, loc.longitude, 16)
+                    RealMapTileFetcher.fetchTileSync(tX, tY, 16, stampConfig.value.mapStyle)
+                }
             }
         }
     }
@@ -137,6 +150,17 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
     fun updateConfig(newConfig: StampConfig) {
         prefsRepo.updateConfig(newConfig)
+    }
+
+    fun cycleMapStyle() {
+        val styles = MapStyle.entries
+        val currentIndex = styles.indexOf(stampConfig.value.mapStyle)
+        val nextIndex = (currentIndex + 1) % styles.size
+        updateConfig(stampConfig.value.copy(mapStyle = styles[nextIndex]))
+    }
+
+    fun setMapStyle(style: MapStyle) {
+        updateConfig(stampConfig.value.copy(mapStyle = style))
     }
 
     fun updateQuickNote(note: String) {

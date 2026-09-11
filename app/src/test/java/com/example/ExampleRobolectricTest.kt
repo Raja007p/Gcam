@@ -50,19 +50,30 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `verify mini map renderer generates bitmap`() {
-    val bitmap = MiniMapRenderer.generateMiniMapBitmap(
-      width = 120,
-      height = 120,
-      latitude = 35.434008,
-      longitude = -118.730612,
-      mapStyle = MapStyle.NORMAL_STREET
-    )
+  fun `verify mini map renderer generates bitmap for all 4 map styles`() {
+    for (style in MapStyle.entries) {
+      val bitmap = MiniMapRenderer.generateMiniMapBitmap(
+        width = 120,
+        height = 120,
+        latitude = 35.434008,
+        longitude = -118.730612,
+        mapStyle = style
+      )
 
-    assertNotNull(bitmap)
-    assertEquals(120, bitmap.width)
-    assertEquals(120, bitmap.height)
-    bitmap.recycle()
+      assertNotNull("Bitmap for ${style.name} should not be null", bitmap)
+      assertEquals(120, bitmap.width)
+      assertEquals(120, bitmap.height)
+      bitmap.recycle()
+    }
+  }
+
+  @Test
+  fun `verify tile coordinate calculation for GPS position`() {
+    val (tX, tY, offsets) = com.example.stamp.RealMapTileFetcher.getTileCoords(37.4220, -122.0841, 16)
+    assertTrue("Tile X should be positive", tX > 0)
+    assertTrue("Tile Y should be positive", tY > 0)
+    assertTrue("Pixel offset X should be between 0 and 256", offsets.first in 0.0..256.0)
+    assertTrue("Pixel offset Y should be between 0 and 256", offsets.second in 0.0..256.0)
   }
 
   @Test
