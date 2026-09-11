@@ -17,16 +17,20 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.Icon
@@ -90,6 +94,43 @@ fun RealGoogleMiniMapView(
             val js = "if (window.setMapStyle) { window.setMapStyle('${mapStyle.name}'); }"
             webView.evaluateJavascript(js, null)
         }
+    }
+
+    if (!location.hasRealFix && location.latitude == 0.0 && location.longitude == 0.0) {
+        Box(
+            modifier = modifier
+                .clip(RoundedCornerShape(8.dp))
+                .border(1.5.dp, Color.White.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                .background(Slate950)
+                .testTag("real_google_mini_map"),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.GpsFixed,
+                    contentDescription = null,
+                    tint = Cyan400,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "NO GPS FIX",
+                    color = Color.White,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Turn on GPS",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 7.sp
+                )
+            }
+        }
+        return
     }
 
     Box(

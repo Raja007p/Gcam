@@ -19,6 +19,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.example.model.LocationData
 import com.example.model.StampConfig
+import com.example.permission.PermissionManager
 import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -99,32 +100,48 @@ class LocationSensorManager(
     }
 
     fun onPermissionGranted() {
-        if (hasLocationPermission()) {
+        if (hasLocationPermission() && PermissionManager.isLocationServiceEnabled(context)) {
             startLocationUpdates()
             requestImmediateFix()
+        } else if (!PermissionManager.isLocationServiceEnabled(context)) {
+            onLocationServiceDisabled()
+        }
+    }
+
+    fun onLocationServiceDisabled() {
+        stopLocationUpdates()
+        if (currentConfig?.useManualLocation != true) {
+            _locationData.value = LocationData(
+                latitude = 0.0,
+                longitude = 0.0,
+                altitudeMeters = 0.0,
+                accuracyMeters = 0f,
+                speedKmh = 0f,
+                hasRealFix = false,
+                isLiveFix = false,
+                title = "Location is turned off",
+                addressLine = "Location is turned off. Please turn on Location to use this feature."
+            )
         }
     }
 
     fun startListening() {
         startSensors()
         isListening = true
-        if (hasLocationPermission()) {
+        if (hasLocationPermission() && PermissionManager.isLocationServiceEnabled(context)) {
             startLocationUpdates()
             requestImmediateFix()
+        } else if (!PermissionManager.isLocationServiceEnabled(context)) {
+            onLocationServiceDisabled()
         }
     }
 
-    fun stopListening() {
-        isListening = false
+    fun stopLocationUpdates() {
         isLocationUpdatesActive = false
-
-        sensorManager?.unregisterListener(this)
-
         locationCallback?.let {
             fusedLocationClient.removeLocationUpdates(it)
             locationCallback = null
         }
-
         gpsListener?.let {
             try {
                 locationManager?.removeUpdates(it)
@@ -133,7 +150,6 @@ class LocationSensorManager(
             }
             gpsListener = null
         }
-
         networkListener?.let {
             try {
                 locationManager?.removeUpdates(it)
@@ -142,6 +158,12 @@ class LocationSensorManager(
             }
             networkListener = null
         }
+    }
+
+    fun stopListening() {
+        isListening = false
+        stopLocationUpdates()
+        sensorManager?.unregisterListener(this)
     }
 
     private fun startSensors() {
@@ -162,28 +184,36 @@ class LocationSensorManager(
     }
 
     private fun hasLocationPermission(): Boolean {
-        val fineGranted = ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-        val coarseGranted = ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-        return fineGranted || coarseGranted
+        return PermissionManager.isLocationPermissionGranted(context)
+    }
+
+    private fun isLocationFresh(location: Location): Boolean {
+        // Only consider a cached location valid if recorded in the last 60 seconds.
+        // Prevents using stale, random, or old locations when GPS was disabled or lost.
+        val ageMs = System.currentTimeMillis() - location.time
+        return ageMs in 0..60_000L
     }
 
     @SuppressLint("MissingPermission")
     fun requestImmediateFix() {
-        if (!hasLocationPermission()) {
-            Log.d("LocationSensorManager", "Skipping immediate fix: no permission granted yet.")
+        if (!hasLocationPermission() || !PermissionManager.isLocationServiceEnabled(context)) {
+            Log.d("LocationSensorManager", "Skipping immediate fix: permission missing or location service off.")
+            if (!PermissionManager.isLocationServiceEnabled(context)) {
+                onLocationServiceDisabled()
+            }
             return
         }
 
         try {
-            // 1. Check lastLocation from Google FusedLocationProviderClient
+            // 1. Check lastLocation from Google FusedLocationProviderClient only if strictly fresh
             fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-                location?.let { handleNewLocation(it) }
+                location?.let {
+                    if (isLocationFresh(it)) {
+                        handleNewLocation(it)
+                    } else {
+                        Log.d("LocationSensorManager", "Ignored stale cached location (${(System.currentTimeMillis() - it.time) / 1000}s old)")
+                    }
+                }
             }
 
             // 2. Request active getCurrentLocation for an instant accurate fix
@@ -199,12 +229,12 @@ class LocationSensorManager(
                     loc?.let { handleNewLocation(it) }
                 }
 
-            // 3. Fallback: check last known locations from standard LocationManager
+            // 3. Fallback: check last known locations from standard LocationManager only if strictly fresh
             locationManager?.let { lm ->
                 val providers = lm.getProviders(true)
                 for (provider in providers) {
                     val last = lm.getLastKnownLocation(provider)
-                    if (last != null) {
+                    if (last != null && isLocationFresh(last)) {
                         handleNewLocation(last)
                         break
                     }
@@ -219,8 +249,8 @@ class LocationSensorManager(
 
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
-        if (!hasLocationPermission()) {
-            Log.d("LocationSensorManager", "Cannot start location updates: permission not granted.")
+        if (!hasLocationPermission() || !PermissionManager.isLocationServiceEnabled(context)) {
+            Log.d("LocationSensorManager", "Cannot start location updates: permission not granted or location service off.")
             return
         }
 

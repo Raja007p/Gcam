@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
@@ -63,6 +64,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.example.permission.PermissionManager
+import com.example.permission.PermissionStatus
+import com.example.permission.findActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -129,26 +135,40 @@ fun CameraScreen(
     var showNoteDialog by remember { mutableStateOf(false) }
     var editedNoteText by remember { mutableStateOf(stampConfig.customNote) }
 
-    // Permission state
-    var hasCameraPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-        )
-    }
-    var hasLocationPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        )
+    // Permission state & management
+    val activity = remember(context) { context.findActivity() }
+    var permissionStatus by remember {
+        mutableStateOf(PermissionManager.checkStatus(context, activity))
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
+    val multiplePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        hasCameraPermission = permissions[Manifest.permission.CAMERA] ?: hasCameraPermission
-        val fine = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
-        val coarse = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
-        hasLocationPermission = fine || coarse || hasLocationPermission
-        if (hasLocationPermission) {
+    ) { _ ->
+        PermissionManager.markCameraRequested(context)
+        PermissionManager.markLocationRequested(context)
+        val newStatus = PermissionManager.checkStatus(context, activity)
+        permissionStatus = newStatus
+        if (newStatus.isLocationGranted && newStatus.isLocationServiceEnabled) {
+            viewModel.onLocationPermissionGranted()
+            viewModel.startSensors()
+            viewModel.refreshLocation()
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        PermissionManager.markCameraRequested(context)
+        permissionStatus = PermissionManager.checkStatus(context, activity)
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        PermissionManager.markLocationRequested(context)
+        val newStatus = PermissionManager.checkStatus(context, activity)
+        permissionStatus = newStatus
+        if (newStatus.isLocationGranted && newStatus.isLocationServiceEnabled) {
             viewModel.onLocationPermissionGranted()
             viewModel.startSensors()
             viewModel.refreshLocation()
@@ -180,24 +200,44 @@ fun CameraScreen(
         uri?.let { viewModel.processPickedImage(it) }
     }
 
-    // Lifecycle sensor control
+    // Automatically check everything again whenever user returns to the app (ON_RESUME)
     DisposableEffect(lifecycleOwner) {
-        viewModel.startSensors()
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val newStatus = PermissionManager.checkStatus(context, activity)
+                permissionStatus = newStatus
+                if (newStatus.isLocationGranted && newStatus.isLocationServiceEnabled) {
+                    viewModel.onLocationPermissionGranted()
+                    viewModel.startSensors()
+                    viewModel.refreshLocation()
+                } else if (!newStatus.isLocationServiceEnabled) {
+                    viewModel.onLocationServiceDisabled()
+                }
+            } else if (event == Lifecycle.Event.ON_PAUSE) {
+                viewModel.stopSensors()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
             viewModel.stopSensors()
         }
     }
 
     // Automatically request permissions on launch if not granted
     LaunchedEffect(Unit) {
-        if (!hasCameraPermission || !hasLocationPermission) {
-            permissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                )
-            )
+        if (!permissionStatus.isCameraGranted || !permissionStatus.isLocationGranted) {
+            val toRequest = mutableListOf<String>()
+            if (!permissionStatus.isCameraGranted && !permissionStatus.isCameraPermanentlyDenied) {
+                toRequest.add(Manifest.permission.CAMERA)
+            }
+            if (!permissionStatus.isLocationGranted && !permissionStatus.isLocationPermanentlyDenied) {
+                toRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
+                toRequest.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
+            if (toRequest.isNotEmpty()) {
+                multiplePermissionLauncher.launch(toRequest.toTypedArray())
+            }
         }
     }
 
@@ -220,119 +260,105 @@ fun CameraScreen(
         }
     }
 
+    // If permissions or Location/GPS service are missing or disabled, show clear requirement UI
+    if (!permissionStatus.isFullyReady) {
+        PermissionRequirementView(
+            status = permissionStatus,
+            onRequestCamera = {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            },
+            onRequestLocation = {
+                locationPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                )
+            },
+            onRequestAll = {
+                multiplePermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.CAMERA,
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                )
+            },
+            onTurnOnLocation = {
+                PermissionManager.openLocationSettings(context)
+            },
+            onOpenAppSettings = {
+                PermissionManager.openAppSettings(context)
+            },
+            onRefreshCheck = {
+                val newStatus = PermissionManager.checkStatus(context, activity)
+                permissionStatus = newStatus
+                if (newStatus.isLocationGranted && newStatus.isLocationServiceEnabled) {
+                    viewModel.onLocationPermissionGranted()
+                    viewModel.startSensors()
+                    viewModel.refreshLocation()
+                }
+            }
+        )
+        return
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Slate950)
             .testTag("camera_screen")
     ) {
-        // Camera Viewfinder or Permission Prompt
-        if (hasCameraPermission) {
-            // Re-bind camera whenever lensFacing changes
-            key(lensFacing) {
-                AndroidView(
-                    factory = { ctx ->
-                        val view = PreviewView(ctx).apply {
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            scaleType = PreviewView.ScaleType.FILL_CENTER
-                        }
-                        previewView = view
-
-                        val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                        cameraProviderFuture.addListener({
-                            try {
-                                val cameraProvider = cameraProviderFuture.get()
-                                val preview = Preview.Builder().build().also {
-                                    it.setSurfaceProvider(view.surfaceProvider)
-                                }
-
-                                val capture = ImageCapture.Builder()
-                                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                                    .setFlashMode(flashMode)
-                                    .build()
-                                imageCapture = capture
-
-                                val selector = CameraSelector.Builder()
-                                    .requireLensFacing(lensFacing)
-                                    .build()
-
-                                cameraProvider.unbindAll()
-                                cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    selector,
-                                    preview,
-                                    capture
-                                )
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }, ContextCompat.getMainExecutor(ctx))
-
-                        view
-                    },
-                    update = {
-                        imageCapture?.flashMode = flashMode
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        } else {
-            // Simulated Viewfinder & Permission Request Card
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color(0xFF0F172A), Color(0xFF020617))
+        // Camera Viewfinder
+        key(lensFacing) {
+            AndroidView(
+                factory = { ctx ->
+                    val view = PreviewView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
                         )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PhotoCamera,
-                        contentDescription = null,
-                        tint = Cyan400,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Camera & Location Access",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "To embed real-time GPS coordinates, altitude, compass, and mini-map markers onto your photos, please grant permissions.",
-                        color = Color.LightGray,
-                        textAlign = TextAlign.Center,
-                        fontSize = 14.sp
-                    )
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Button(
-                        onClick = {
-                            permissionLauncher.launch(
-                                arrayOf(
-                                    Manifest.permission.CAMERA,
-                                    Manifest.permission.ACCESS_FINE_LOCATION,
-                                    Manifest.permission.ACCESS_COARSE_LOCATION
-                                )
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Cyan500),
-                        modifier = Modifier.testTag("grant_permissions_button")
-                    ) {
-                        Text("Grant Camera & GPS Permissions", fontWeight = FontWeight.Bold)
+                        scaleType = PreviewView.ScaleType.FILL_CENTER
                     }
-                }
-            }
+                    previewView = view
+
+                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                    cameraProviderFuture.addListener({
+                        try {
+                            val cameraProvider = cameraProviderFuture.get()
+                            val preview = Preview.Builder().build().also {
+                                it.setSurfaceProvider(view.surfaceProvider)
+                            }
+
+                            val capture = ImageCapture.Builder()
+                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                                .setFlashMode(flashMode)
+                                .build()
+                            imageCapture = capture
+
+                            val selector = CameraSelector.Builder()
+                                .requireLensFacing(lensFacing)
+                                .build()
+
+                            cameraProvider.unbindAll()
+                            cameraProvider.bindToLifecycle(
+                                lifecycleOwner,
+                                selector,
+                                preview,
+                                capture
+                            )
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }, ContextCompat.getMainExecutor(ctx))
+
+                    view
+                },
+                update = {
+                    imageCapture?.flashMode = flashMode
+                },
+                modifier = Modifier.fillMaxSize()
+            )
         }
 
         // Top Controls Header Overlay (Transparent)
@@ -463,13 +489,16 @@ fun CameraScreen(
             ) {
                 // Live Location Status Pill
                 val isManual = stampConfig.useManualLocation
-                val isLive = locationData.isLiveFix && !isManual
+                val isLocationOff = !permissionStatus.isLocationServiceEnabled
+                val isLive = locationData.isLiveFix && !isManual && !isLocationOff
                 val statusColor = when {
+                    isLocationOff -> Amber400
                     isManual -> Amber400
                     isLive -> Emerald500
                     else -> Cyan400
                 }
                 val statusText = when {
+                    isLocationOff -> "LOCATION OFF"
                     isManual -> "MOCK GPS"
                     isLive -> "LIVE GPS"
                     else -> "ACQUIRING..."
@@ -482,8 +511,11 @@ fun CameraScreen(
                     modifier = Modifier
                         .weight(1f, fill = false)
                         .clickable {
-                            if (!hasLocationPermission) {
-                                permissionLauncher.launch(
+                            if (isLocationOff) {
+                                Toast.makeText(context, "Location is turned off. Please turn on Location to use this feature.", Toast.LENGTH_LONG).show()
+                                PermissionManager.openLocationSettings(context)
+                            } else if (!permissionStatus.isLocationGranted) {
+                                locationPermissionLauncher.launch(
                                     arrayOf(
                                         Manifest.permission.ACCESS_FINE_LOCATION,
                                         Manifest.permission.ACCESS_COARSE_LOCATION
@@ -501,7 +533,7 @@ fun CameraScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = if (isLive) Icons.Default.MyLocation else Icons.Default.LocationOn,
+                            imageVector = if (isLocationOff) Icons.Default.LocationOff else if (isLive) Icons.Default.MyLocation else Icons.Default.LocationOn,
                             contentDescription = null,
                             tint = statusColor,
                             modifier = Modifier.size(13.dp)
@@ -513,7 +545,7 @@ fun CameraScreen(
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
-                        if (locationData.hasRealFix || locationData.latitude != 0.0) {
+                        if (!isLocationOff && (locationData.hasRealFix || locationData.latitude != 0.0)) {
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "${locationData.latitude.toString().take(6)}, ${locationData.longitude.toString().take(6)}",
@@ -665,6 +697,23 @@ fun CameraScreen(
                         .clip(CircleShape)
                         .background(ShutterRing)
                         .clickable(enabled = !isCapturing) {
+                            val currentStatus = PermissionManager.checkStatus(context, activity)
+                            permissionStatus = currentStatus
+                            if (!currentStatus.isCameraGranted) {
+                                Toast.makeText(context, "Camera permission is required to capture photos.", Toast.LENGTH_SHORT).show()
+                                return@clickable
+                            }
+                            if (!stampConfig.useManualLocation) {
+                                if (!currentStatus.isLocationGranted) {
+                                    Toast.makeText(context, "Location permission is required to geotag photos.", Toast.LENGTH_SHORT).show()
+                                    return@clickable
+                                }
+                                if (!currentStatus.isLocationServiceEnabled) {
+                                    Toast.makeText(context, "Location is turned off. Please turn on Location to use this feature.", Toast.LENGTH_LONG).show()
+                                    PermissionManager.openLocationSettings(context)
+                                    return@clickable
+                                }
+                            }
                             imageCapture?.let { capture ->
                                 viewModel.capturePhoto(capture)
                             } ?: run {

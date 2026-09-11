@@ -1,5 +1,6 @@
 package com.example.ui.settings
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
@@ -65,6 +67,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -76,10 +79,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.example.permission.PermissionManager
+import com.example.permission.findActivity
 import androidx.documentfile.provider.DocumentFile
 import com.example.model.AltitudeUnit
 import com.example.model.CoordinateFormat
@@ -110,6 +118,46 @@ fun SettingsScreen(
     val stampConfig by viewModel.stampConfig.collectAsState()
     val locationData by viewModel.locationData.collectAsState()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    val activity = remember(context) { context.findActivity() }
+    var permissionStatus by remember {
+        mutableStateOf(PermissionManager.checkStatus(context, activity))
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        PermissionManager.markLocationRequested(context)
+        val newStatus = PermissionManager.checkStatus(context, activity)
+        permissionStatus = newStatus
+        if (newStatus.isLocationGranted && newStatus.isLocationServiceEnabled) {
+            viewModel.onLocationPermissionGranted()
+            viewModel.startSensors()
+            viewModel.refreshLocation()
+        }
+    }
+
+    // Automatically check permissions and GPS service status when user returns
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val newStatus = PermissionManager.checkStatus(context, activity)
+                permissionStatus = newStatus
+                if (newStatus.isLocationGranted && newStatus.isLocationServiceEnabled) {
+                    viewModel.onLocationPermissionGranted()
+                    viewModel.startSensors()
+                    viewModel.refreshLocation()
+                } else if (!newStatus.isLocationServiceEnabled) {
+                    viewModel.onLocationServiceDisabled()
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -181,25 +229,101 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                val isLocationOff = !permissionStatus.isLocationServiceEnabled
+                                val icon = if (isLocationOff) Icons.Default.LocationOff else if (locationData.isLiveFix) Icons.Default.MyLocation else Icons.Default.GpsFixed
+                                val tint = if (isLocationOff) Amber400 else if (stampConfig.useManualLocation) Amber400 else if (locationData.isLiveFix) Emerald500 else Cyan400
                                 Icon(
-                                    imageVector = if (locationData.isLiveFix) Icons.Default.MyLocation else Icons.Default.GpsFixed,
+                                    imageVector = icon,
                                     contentDescription = null,
-                                    tint = if (stampConfig.useManualLocation) Amber400 else if (locationData.isLiveFix) Emerald500 else Cyan400,
+                                    tint = tint,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = if (stampConfig.useManualLocation) {
+                                    text = if (isLocationOff) {
+                                        "LOCATION / GPS IS TURNED OFF"
+                                    } else if (stampConfig.useManualLocation) {
                                         "MANUAL / SIMULATED LOCATION"
                                     } else if (locationData.isLiveFix) {
                                         "LIVE GPS FIX ACTIVE (Continuous)"
                                     } else {
                                         "ACQUIRING GPS SATELLITE FIX..."
                                     },
-                                    color = if (stampConfig.useManualLocation) Amber400 else if (locationData.isLiveFix) Emerald500 else Cyan400,
+                                    color = tint,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
                                 )
+                            }
+                        }
+
+                        if (!permissionStatus.isLocationServiceEnabled) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Surface(
+                                color = Amber400.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Amber400.copy(alpha = 0.4f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "Location is turned off. Please turn on Location to use this feature.",
+                                        color = Amber400,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Button(
+                                        onClick = { PermissionManager.openLocationSettings(context) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Amber400),
+                                        modifier = Modifier.testTag("settings_turn_on_location_button")
+                                    ) {
+                                        Text("Turn On Location", color = Slate950, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        } else if (!permissionStatus.isLocationGranted) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Surface(
+                                color = Amber400.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Amber400.copy(alpha = 0.4f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = if (permissionStatus.isLocationPermanentlyDenied) {
+                                            "Location permission is permanently denied. Please enable it in App Settings."
+                                        } else {
+                                            "Location permission is required to embed GPS coordinates onto photos."
+                                        },
+                                        color = Amber400,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Button(
+                                        onClick = {
+                                            if (permissionStatus.isLocationPermanentlyDenied) {
+                                                PermissionManager.openAppSettings(context)
+                                            } else {
+                                                locationPermissionLauncher.launch(
+                                                    arrayOf(
+                                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                                    )
+                                                )
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Cyan500),
+                                        modifier = Modifier.testTag("settings_grant_location_button")
+                                    ) {
+                                        Text(
+                                            if (permissionStatus.isLocationPermanentlyDenied) "Open App Settings" else "Grant Location Permission",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
                             }
                         }
 

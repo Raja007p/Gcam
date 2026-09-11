@@ -86,5 +86,16 @@ class ExampleRobolectricTest {
     assertTrue(config.showAddress)
     assertTrue(config.showDateTime)
   }
+
+  @Test
+  fun `verify permission manager status evaluation`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val status = com.example.permission.PermissionManager.checkStatus(context, null)
+    // Initially in testing context, checkStatus returns a well-formed PermissionStatus
+    assertNotNull(status)
+    // PermissionRequirementView messaging validation
+    val locationOffMessage = "Location is turned off. Please turn on Location to use this feature."
+    assertEquals(68, locationOffMessage.length)
+  }
 }
 

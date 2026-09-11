@@ -27,6 +27,7 @@ import com.example.data.PreferencesRepository
 import com.example.model.LocationData
 import com.example.model.MapStyle
 import com.example.model.StampConfig
+import com.example.permission.PermissionManager
 import com.example.stamp.RealMapTileFetcher
 import com.example.stamp.StampBitmapGenerator
 import kotlinx.coroutines.Dispatchers
@@ -110,6 +111,10 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         locationSensorManager.onPermissionGranted()
     }
 
+    fun onLocationServiceDisabled() {
+        locationSensorManager.onLocationServiceDisabled()
+    }
+
     fun refreshLocation() {
         locationSensorManager.requestImmediateFix()
     }
@@ -170,9 +175,32 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
     fun capturePhoto(imageCapture: ImageCapture) {
         if (_isCapturing.value) return
-        _isCapturing.value = true
 
         val context = getApplication<Application>()
+
+        if (!PermissionManager.isCameraPermissionGranted(context)) {
+            viewModelScope.launch {
+                _uiEvents.emit(CameraUiEvent.Error("Camera permission is required to capture photos."))
+            }
+            return
+        }
+
+        if (!stampConfig.value.useManualLocation) {
+            if (!PermissionManager.isLocationPermissionGranted(context)) {
+                viewModelScope.launch {
+                    _uiEvents.emit(CameraUiEvent.Error("Location permission is required to capture geotagged photos."))
+                }
+                return
+            }
+            if (!PermissionManager.isLocationServiceEnabled(context)) {
+                viewModelScope.launch {
+                    _uiEvents.emit(CameraUiEvent.Error("Location is turned off. Please turn on Location to use this feature."))
+                }
+                return
+            }
+        }
+
+        _isCapturing.value = true
         val outputDir = getOutputDirectory(context)
         val tempFile = File(outputDir, "TEMP_${System.currentTimeMillis()}.jpg")
 

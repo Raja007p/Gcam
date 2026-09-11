@@ -23,6 +23,11 @@ object MiniMapRenderer {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
+        if (latitude == 0.0 && longitude == 0.0) {
+            drawNoGpsPlaceholder(canvas, width, height)
+            return bitmap
+        }
+
         val zoom = if (mapStyle == MapStyle.STREET_VIEW) 18 else 16
         val (tileX, tileY, offsets) = RealMapTileFetcher.getTileCoords(latitude, longitude, zoom)
         val (pixelOffsetX, pixelOffsetY) = offsets
@@ -230,5 +235,41 @@ object MiniMapRenderer {
             textAlign = Paint.Align.CENTER
         }
         canvas.drawText(mapStyle.badge, modeRect.centerX(), modeRect.centerY() + 3f, modeTextPaint)
+    }
+
+    private fun drawNoGpsPlaceholder(canvas: Canvas, w: Int, h: Int) {
+        val bgPaint = Paint().apply {
+            color = Color.rgb(15, 23, 42) // Slate 900
+            style = Paint.Style.FILL
+        }
+        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), bgPaint)
+
+        // Radar grid
+        val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(40, 0, 229, 255)
+            style = Paint.Style.STROKE
+            strokeWidth = 1.5f
+        }
+        val cx = w / 2f
+        val cy = h / 2f
+        canvas.drawCircle(cx, cy, 25f, gridPaint)
+        canvas.drawCircle(cx, cy, 50f, gridPaint)
+        canvas.drawLine(cx - 60f, cy, cx + 60f, cy, gridPaint)
+        canvas.drawLine(cx, cy - 60f, cx, cy + 60f, gridPaint)
+
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(248, 250, 252)
+            textSize = 12f
+            textAlign = Paint.Align.CENTER
+            isFakeBoldText = true
+        }
+        canvas.drawText("GPS UNAVAILABLE", cx, cy - 6f, textPaint)
+
+        val subTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(148, 163, 184)
+            textSize = 9f
+            textAlign = Paint.Align.CENTER
+        }
+        canvas.drawText("Turn On Location", cx, cy + 12f, subTextPaint)
     }
 }
