@@ -37,6 +37,8 @@ class PreferencesRepository(context: Context) {
             stampPosition = StampPosition.valueOf(prefs.getString("stamp_pos", StampPosition.BOTTOM.name) ?: StampPosition.BOTTOM.name),
             bgStyle = StampBgStyle.valueOf(prefs.getString("bg_style", StampBgStyle.TRANSLUCENT_DARK.name) ?: StampBgStyle.TRANSLUCENT_DARK.name),
             customFolderName = prefs.getString("custom_folder_name", "GPSMapCamera") ?: "GPSMapCamera",
+            customFolderTreeUri = prefs.getString("custom_folder_tree_uri", null),
+            customFolderDisplayName = prefs.getString("custom_folder_display_name", null),
             saveToGallery = prefs.getBoolean("save_to_gallery", true),
             useManualLocation = prefs.getBoolean("use_manual_loc", false),
             manualLatitude = prefs.getFloat("manual_lat", 35.434008f).toDouble(),
@@ -66,6 +68,8 @@ class PreferencesRepository(context: Context) {
             putString("stamp_pos", config.stampPosition.name)
             putString("bg_style", config.bgStyle.name)
             putString("custom_folder_name", config.customFolderName)
+            putString("custom_folder_tree_uri", config.customFolderTreeUri)
+            putString("custom_folder_display_name", config.customFolderDisplayName)
             putBoolean("save_to_gallery", config.saveToGallery)
             putBoolean("use_manual_loc", config.useManualLocation)
             putFloat("manual_lat", config.manualLatitude.toFloat())

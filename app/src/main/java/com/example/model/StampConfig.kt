@@ -51,6 +51,8 @@ data class StampConfig(
 
     // Storage and Gallery Customization
     val customFolderName: String = "GPSMapCamera",
+    val customFolderTreeUri: String? = null,
+    val customFolderDisplayName: String? = null,
     val saveToGallery: Boolean = true,
 
     // Manual / Mock Location Test Mode (Great for emulators and indoors)

@@ -6,23 +6,24 @@ import java.util.Locale
 import kotlin.math.abs
 
 data class LocationData(
-    val latitude: Double = 35.434008,
-    val longitude: Double = -118.730612,
-    val altitudeMeters: Double = 605.0,
-    val accuracyMeters: Float = 4.2f,
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val altitudeMeters: Double = 0.0,
+    val accuracyMeters: Float = 0f,
     val speedKmh: Float = 0f,
-    val bearingDegrees: Float = 220f,
-    val compassDegrees: Float = 220f,
-    val compassDirection: String = "SW",
-    val title: String = "California, United States",
-    val addressLine: String = "Breckenridge Road, Kern County, California, United States",
-    val plusCode: String = "84CQ+47",
+    val bearingDegrees: Float = 0f,
+    val compassDegrees: Float = 0f,
+    val compassDirection: String = "N",
+    val title: String = "Acquiring GPS...",
+    val addressLine: String = "Locating via device GPS satellites...",
+    val plusCode: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val temperatureC: Int = 25,
     val weatherCondition: String = "Sunny",
     val humidityPercent: Int = 42,
     val pressureHpa: Int = 1014,
-    val isLiveFix: Boolean = false
+    val isLiveFix: Boolean = false,
+    val hasRealFix: Boolean = false
 ) {
     fun getFormattedDateTime(pattern: String = "EEEE, dd MMMM yyyy HH:mm:ss Z"): String {
         return try {
@@ -35,14 +36,19 @@ data class LocationData(
     }
 
     fun getLatitudeDms(): String {
+        if (!hasRealFix && latitude == 0.0) return "Acquiring Lat..."
         return toDms(latitude, isLatitude = true)
     }
 
     fun getLongitudeDms(): String {
+        if (!hasRealFix && longitude == 0.0) return "Acquiring Lng..."
         return toDms(longitude, isLatitude = false)
     }
 
     fun getCoordinatesFormatted(format: CoordinateFormat): String {
+        if (!hasRealFix && latitude == 0.0 && longitude == 0.0) {
+            return "Acquiring Live GPS..."
+        }
         return when (format) {
             CoordinateFormat.DMS -> "${getLatitudeDms()}  ${getLongitudeDms()}"
             CoordinateFormat.DECIMAL -> {

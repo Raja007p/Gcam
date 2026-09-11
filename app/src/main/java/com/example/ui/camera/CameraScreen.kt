@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.FlashAuto
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
@@ -84,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.documentfile.provider.DocumentFile
 import coil.compose.AsyncImage
 import com.example.model.StampPosition
 import com.example.ui.components.StampOverlayView
@@ -94,6 +96,7 @@ import com.example.ui.theme.Emerald500
 import com.example.ui.theme.Red500
 import com.example.ui.theme.ShutterInner
 import com.example.ui.theme.ShutterRing
+import com.example.ui.theme.Slate700
 import com.example.ui.theme.Slate800
 import com.example.ui.theme.Slate900
 import com.example.ui.theme.Slate950
@@ -145,8 +148,27 @@ fun CameraScreen(
         val coarse = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
         hasLocationPermission = fine || coarse || hasLocationPermission
         if (hasLocationPermission) {
+            viewModel.onLocationPermissionGranted()
             viewModel.startSensors()
             viewModel.refreshLocation()
+        }
+    }
+
+    // Storage Access Framework folder picker to select custom folder
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(uri, takeFlags)
+            } catch (e: Exception) {
+                // Some OS environments or content providers don't need persistable flag
+            }
+            val doc = DocumentFile.fromTreeUri(context, uri)
+            val displayName = doc?.name ?: uri.lastPathSegment ?: "Custom Folder"
+            viewModel.setCustomFolderTree(uri, displayName)
+            Toast.makeText(context, "Save location set to: $displayName", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -183,7 +205,12 @@ fun CameraScreen(
         viewModel.uiEvents.collect { event ->
             when (event) {
                 is CameraUiEvent.PhotoSaved -> {
-                    Toast.makeText(context, "GPS Photo Stamped & Saved!", Toast.LENGTH_SHORT).show()
+                    val locationLabel = if (!stampConfig.customFolderDisplayName.isNullOrBlank()) {
+                        "Saved to ${stampConfig.customFolderDisplayName}"
+                    } else {
+                        "Saved to Pictures/${stampConfig.customFolderName}"
+                    }
+                    Toast.makeText(context, "GPS Photo Stamped! ($locationLabel)", Toast.LENGTH_SHORT).show()
                 }
                 is CameraUiEvent.Error -> {
                     Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
@@ -307,151 +334,226 @@ fun CameraScreen(
             }
         }
 
-        // Top Controls Bar (Transparent Overlay)
-        Row(
+        // Top Controls Header Overlay (Transparent)
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
-            // Flash Mode Toggle
-            IconButton(
-                onClick = { viewModel.cycleFlash() },
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(Color(0x66000000), CircleShape)
-                    .testTag("flash_toggle_button")
+            // Main Top Bar: Flash on left, Action Icons on right
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                val icon = when (flashMode) {
-                    ImageCapture.FLASH_MODE_ON -> Icons.Default.FlashOn
-                    ImageCapture.FLASH_MODE_AUTO -> Icons.Default.FlashAuto
-                    else -> Icons.Default.FlashOff
-                }
-                Icon(imageVector = icon, contentDescription = "Flash Mode", tint = Color.White)
-            }
-
-            // Live Location Status Pill
-            val isManual = stampConfig.useManualLocation
-            val isLive = locationData.isLiveFix && !isManual
-            val statusColor = when {
-                isManual -> Amber400
-                isLive -> Emerald500
-                else -> Cyan400
-            }
-            val statusText = when {
-                isManual -> "MOCK GPS"
-                isLive -> "LIVE GPS"
-                else -> "GPS SEARCH"
-            }
-
-            Surface(
-                color = Color(0x77000000),
-                shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, statusColor.copy(alpha = 0.6f)),
-                modifier = Modifier
-                    .clickable {
-                        if (!hasLocationPermission) {
-                            permissionLauncher.launch(
-                                arrayOf(
-                                    Manifest.permission.ACCESS_FINE_LOCATION,
-                                    Manifest.permission.ACCESS_COARSE_LOCATION
-                                )
-                            )
-                        } else {
-                            viewModel.refreshLocation()
-                            Toast.makeText(context, "Acquiring live GPS satellite fix...", Toast.LENGTH_SHORT).show()
-                        }
+                // Flash Mode Toggle
+                IconButton(
+                    onClick = { viewModel.cycleFlash() },
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(Color(0x88000000), CircleShape)
+                        .testTag("flash_toggle_button")
+                ) {
+                    val icon = when (flashMode) {
+                        ImageCapture.FLASH_MODE_ON -> Icons.Default.FlashOn
+                        ImageCapture.FLASH_MODE_AUTO -> Icons.Default.FlashAuto
+                        else -> Icons.Default.FlashOff
                     }
-                    .testTag("gps_status_pill")
-            ) {
+                    Icon(imageVector = icon, contentDescription = "Flash Mode", tint = Color.White)
+                }
+
+                // Action controls row (Save Folder, Verify on Map, Switch Camera, Settings)
                 Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = if (isLive) Icons.Default.MyLocation else Icons.Default.LocationOn,
-                        contentDescription = null,
-                        tint = statusColor,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = statusText,
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "${locationData.latitude.toString().take(7)}, ${locationData.longitude.toString().take(8)}",
-                        color = Color(0xFFCBD5E1),
-                        fontSize = 10.sp
-                    )
-                }
-            }
+                    // Choose Save Folder Button
+                    IconButton(
+                        onClick = { folderPickerLauncher.launch(null) },
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(Color(0x88000000), CircleShape)
+                            .border(1.dp, if (stampConfig.customFolderTreeUri != null) Cyan400 else Color.Transparent, CircleShape)
+                            .testTag("choose_save_folder_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Folder,
+                            contentDescription = "Choose Save Folder",
+                            tint = if (stampConfig.customFolderTreeUri != null) Cyan400 else Color.White
+                        )
+                    }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // Verify Location on Google Maps
-                IconButton(
-                    onClick = {
-                        try {
-                            val mapUri = Uri.parse("geo:${locationData.latitude},${locationData.longitude}?q=${locationData.latitude},${locationData.longitude}(GPS+Camera+Location)")
-                            val mapIntent = Intent(Intent.ACTION_VIEW, mapUri).apply {
-                                setPackage("com.google.android.apps.maps")
-                            }
-                            if (mapIntent.resolveActivity(context.packageManager) != null) {
-                                context.startActivity(mapIntent)
-                            } else {
+                    // Verify Location on Google Maps
+                    IconButton(
+                        onClick = {
+                            try {
+                                val mapUri = Uri.parse("geo:${locationData.latitude},${locationData.longitude}?q=${locationData.latitude},${locationData.longitude}(GPS+Camera+Location)")
+                                val mapIntent = Intent(Intent.ACTION_VIEW, mapUri).apply {
+                                    setPackage("com.google.android.apps.maps")
+                                }
+                                if (mapIntent.resolveActivity(context.packageManager) != null) {
+                                    context.startActivity(mapIntent)
+                                } else {
+                                    val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${locationData.latitude},${locationData.longitude}"))
+                                    context.startActivity(webIntent)
+                                }
+                            } catch (e: Exception) {
                                 val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${locationData.latitude},${locationData.longitude}"))
                                 context.startActivity(webIntent)
                             }
-                        } catch (e: Exception) {
-                            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${locationData.latitude},${locationData.longitude}"))
-                            context.startActivity(webIntent)
+                        },
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(Color(0x88000000), CircleShape)
+                            .testTag("verify_google_maps_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Map,
+                            contentDescription = "Verify on Google Maps",
+                            tint = Cyan400
+                        )
+                    }
+
+                    // Switch Lens (Front/Back)
+                    IconButton(
+                        onClick = { viewModel.toggleCamera() },
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(Color(0x88000000), CircleShape)
+                            .testTag("switch_camera_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Cameraswitch,
+                            contentDescription = "Switch Camera",
+                            tint = Color.White
+                        )
+                    }
+
+                    // Settings Button (Prominent & Always Visible)
+                    Surface(
+                        onClick = onNavigateToSettings,
+                        shape = CircleShape,
+                        color = Slate800,
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, Cyan400),
+                        modifier = Modifier
+                            .size(42.dp)
+                            .testTag("settings_button")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "App Settings",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
                         }
-                    },
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(Color(0x66000000), CircleShape)
-                        .testTag("verify_google_maps_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Map,
-                        contentDescription = "Verify on Google Maps",
-                        tint = Cyan400
-                    )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Secondary Info Bar: GPS Status Pill and Save Folder Pill
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Live Location Status Pill
+                val isManual = stampConfig.useManualLocation
+                val isLive = locationData.isLiveFix && !isManual
+                val statusColor = when {
+                    isManual -> Amber400
+                    isLive -> Emerald500
+                    else -> Cyan400
+                }
+                val statusText = when {
+                    isManual -> "MOCK GPS"
+                    isLive -> "LIVE GPS"
+                    else -> "ACQUIRING..."
                 }
 
-                // Switch Lens (Front/Back)
-                IconButton(
-                    onClick = { viewModel.toggleCamera() },
+                Surface(
+                    color = Color(0x99000000),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, statusColor.copy(alpha = 0.7f)),
                     modifier = Modifier
-                        .size(42.dp)
-                        .background(Color(0x66000000), CircleShape)
-                        .testTag("switch_camera_button")
+                        .weight(1f, fill = false)
+                        .clickable {
+                            if (!hasLocationPermission) {
+                                permissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                    )
+                                )
+                            } else {
+                                viewModel.refreshLocation()
+                                Toast.makeText(context, "Acquiring live GPS satellite fix...", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .testTag("gps_status_pill")
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Cameraswitch,
-                        contentDescription = "Switch Camera",
-                        tint = Color.White
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (isLive) Icons.Default.MyLocation else Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = statusColor,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = statusText,
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (locationData.hasRealFix || locationData.latitude != 0.0) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${locationData.latitude.toString().take(6)}, ${locationData.longitude.toString().take(6)}",
+                                color = Color(0xFFCBD5E1),
+                                fontSize = 10.sp,
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
 
-                // Settings Button
-                IconButton(
-                    onClick = onNavigateToSettings,
+                // Save Location Pill
+                val folderLabel = stampConfig.customFolderDisplayName ?: stampConfig.customFolderName.ifBlank { "Pictures" }
+                Surface(
+                    color = Color(0x99000000),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (stampConfig.customFolderTreeUri != null) Cyan400 else Slate700),
                     modifier = Modifier
-                        .size(42.dp)
-                        .background(Color(0x66000000), CircleShape)
-                        .testTag("settings_button")
+                        .weight(1f, fill = false)
+                        .clickable { folderPickerLauncher.launch(null) }
+                        .testTag("save_folder_pill")
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "App Settings",
-                        tint = Color.White
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Folder,
+                            contentDescription = null,
+                            tint = Cyan400,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Save: $folderLabel",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }

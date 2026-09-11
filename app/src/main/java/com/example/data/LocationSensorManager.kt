@@ -72,6 +72,8 @@ class LocationSensorManager(
 
     private var currentConfig: StampConfig? = null
 
+    private var isLocationUpdatesActive = false
+
     fun updateConfig(config: StampConfig) {
         currentConfig = config
         if (config.useManualLocation) {
@@ -82,31 +84,39 @@ class LocationSensorManager(
                 title = config.manualTitle,
                 addressLine = config.manualAddress,
                 timestamp = System.currentTimeMillis(),
-                isLiveFix = false
+                isLiveFix = false,
+                hasRealFix = true
             )
         } else {
             // Re-check permissions and immediately request a fresh fix if we are listening
-            if (isListening) {
+            if (isListening && hasLocationPermission()) {
                 requestImmediateFix()
+                if (!isLocationUpdatesActive) {
+                    startLocationUpdates()
+                }
             }
         }
     }
 
-    fun startListening() {
-        if (isListening) {
-            // Refresh location request in case permissions were newly granted
+    fun onPermissionGranted() {
+        if (hasLocationPermission()) {
+            startLocationUpdates()
             requestImmediateFix()
-            return
         }
-        isListening = true
+    }
 
+    fun startListening() {
         startSensors()
-        startLocationUpdates()
+        isListening = true
+        if (hasLocationPermission()) {
+            startLocationUpdates()
+            requestImmediateFix()
+        }
     }
 
     fun stopListening() {
-        if (!isListening) return
         isListening = false
+        isLocationUpdatesActive = false
 
         sensorManager?.unregisterListener(this)
 
@@ -215,30 +225,39 @@ class LocationSensorManager(
         }
 
         try {
+            isLocationUpdatesActive = true
+
             // Immediately request fresh fix
             requestImmediateFix()
 
-            // Continuous updates via Google Play Services Fused Location Client
-            val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1500)
-                .setMinUpdateIntervalMillis(1000)
-                .setMinUpdateDistanceMeters(0.5f)
+            // Remove existing callback if any to prevent duplicate streams
+            locationCallback?.let {
+                fusedLocationClient.removeLocationUpdates(it)
+            }
+
+            // Continuous real-time updates via Google Play Services Fused Location Client
+            val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000)
+                .setMinUpdateIntervalMillis(500)
+                .setMinUpdateDistanceMeters(0f)
                 .setWaitForAccurateLocation(false)
                 .build()
 
-            locationCallback = object : LocationCallback() {
+            val callback = object : LocationCallback() {
                 override fun onLocationResult(result: LocationResult) {
                     result.lastLocation?.let { handleNewLocation(it) }
                 }
             }
+            locationCallback = callback
 
             fusedLocationClient.requestLocationUpdates(
                 request,
-                locationCallback as LocationCallback,
+                callback,
                 Looper.getMainLooper()
             )
 
             // Direct device hardware GPS Provider listener fallback
             locationManager?.let { lm ->
+                gpsListener?.let { try { lm.removeUpdates(it) } catch (_: Exception) {} }
                 if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                     val gps = object : LocationListener {
                         override fun onLocationChanged(location: Location) {
@@ -252,14 +271,15 @@ class LocationSensorManager(
                     gpsListener = gps
                     lm.requestLocationUpdates(
                         LocationManager.GPS_PROVIDER,
-                        1500L,
-                        0.5f,
+                        1000L,
+                        0f,
                         gps,
                         Looper.getMainLooper()
                     )
                 }
 
-                // Network Provider fallback for rapid indoors fix
+                // Network Provider fallback for rapid indoor / cellular fix
+                networkListener?.let { try { lm.removeUpdates(it) } catch (_: Exception) {} }
                 if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                     val net = object : LocationListener {
                         override fun onLocationChanged(location: Location) {
@@ -273,8 +293,8 @@ class LocationSensorManager(
                     networkListener = net
                     lm.requestLocationUpdates(
                         LocationManager.NETWORK_PROVIDER,
-                        2000L,
-                        1.0f,
+                        1000L,
+                        0f,
                         net,
                         Looper.getMainLooper()
                     )
@@ -299,6 +319,19 @@ class LocationSensorManager(
         val spd = if (location.hasSpeed()) location.speed * 3.6f else 0f
         val bearing = if (location.hasBearing()) location.bearing else _locationData.value.bearingDegrees
 
+        val interimTitle = if (_locationData.value.hasRealFix && _locationData.value.title != "Acquiring GPS...") {
+            _locationData.value.title
+        } else {
+            String.format(Locale.US, "GPS: %.4f, %.4f", lat, lng)
+        }
+        val interimAddress = if (_locationData.value.hasRealFix && !_locationData.value.addressLine.startsWith("Locating")) {
+            _locationData.value.addressLine
+        } else {
+            val latCard = if (lat >= 0) "N" else "S"
+            val lngCard = if (lng >= 0) "E" else "W"
+            String.format(Locale.US, "%.5f° %s, %.5f° %s (±%.1fm)", Math.abs(lat), latCard, Math.abs(lng), lngCard, acc)
+        }
+
         _locationData.value = _locationData.value.copy(
             latitude = lat,
             longitude = lng,
@@ -306,8 +339,11 @@ class LocationSensorManager(
             accuracyMeters = acc,
             speedKmh = spd,
             bearingDegrees = bearing,
+            title = interimTitle,
+            addressLine = interimAddress,
             timestamp = System.currentTimeMillis(),
-            isLiveFix = true
+            isLiveFix = true,
+            hasRealFix = true
         )
 
         // Reverse geocode in background

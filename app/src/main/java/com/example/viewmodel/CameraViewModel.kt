@@ -17,6 +17,7 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.core.content.ContextCompat
 import android.media.ExifInterface
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppDatabase
@@ -92,8 +93,30 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         locationSensorManager.stopListening()
     }
 
+    fun onLocationPermissionGranted() {
+        locationSensorManager.onPermissionGranted()
+    }
+
     fun refreshLocation() {
         locationSensorManager.requestImmediateFix()
+    }
+
+    fun setCustomFolderTree(uri: Uri, displayName: String) {
+        val updated = stampConfig.value.copy(
+            customFolderTreeUri = uri.toString(),
+            customFolderDisplayName = displayName,
+            customFolderName = displayName
+        )
+        prefsRepo.updateConfig(updated)
+    }
+
+    fun clearCustomFolderTree() {
+        val updated = stampConfig.value.copy(
+            customFolderTreeUri = null,
+            customFolderDisplayName = null,
+            customFolderName = "GPSMapCamera"
+        )
+        prefsRepo.updateConfig(updated)
     }
 
     fun toggleCamera() {
@@ -191,6 +214,34 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                     stampedBitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
                 }
 
+                val currentConfig = stampConfig.value
+                if (!currentConfig.customFolderTreeUri.isNullOrBlank()) {
+                    try {
+                        val treeUri = Uri.parse(currentConfig.customFolderTreeUri)
+                        val dirDoc = DocumentFile.fromTreeUri(context, treeUri)
+                        if (dirDoc != null && dirDoc.canWrite()) {
+                            val safFile = dirDoc.createFile("image/jpeg", "GPS_STAMP_${timeStamp}.jpg")
+                            if (safFile != null) {
+                                context.contentResolver.openOutputStream(safFile.uri)?.use { out ->
+                                    stampedBitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("CameraViewModel", "Failed writing imported photo to SAF tree", e)
+                    }
+                }
+
+                if (currentConfig.saveToGallery) {
+                    savePhotoToMediaStore(
+                        context = context,
+                        bitmap = stampedBitmap,
+                        fileName = "GPS_STAMP_${timeStamp}.jpg",
+                        folderName = currentConfig.customFolderName,
+                        location = locationData.value
+                    )
+                }
+
                 stampedBitmap.recycle()
                 originalBitmap.recycle()
 
@@ -248,6 +299,25 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
             FileOutputStream(stampedFile).use { out ->
                 stampedBitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+            }
+
+            // If user selected a custom save folder via Android SAF folder picker, write to it
+            if (!currentConfig.customFolderTreeUri.isNullOrBlank()) {
+                try {
+                    val treeUri = Uri.parse(currentConfig.customFolderTreeUri)
+                    val dirDoc = DocumentFile.fromTreeUri(context, treeUri)
+                    if (dirDoc != null && dirDoc.canWrite()) {
+                        val safFile = dirDoc.createFile("image/jpeg", fileName)
+                        if (safFile != null) {
+                            context.contentResolver.openOutputStream(safFile.uri)?.use { out ->
+                                stampedBitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+                            }
+                            Log.d("CameraViewModel", "Saved to user SAF directory: ${safFile.uri}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("CameraViewModel", "Failed to write to custom SAF directory: ${e.message}", e)
+                }
             }
 
             // Also export directly to user device's Gallery (DCIM/Pictures) so it appears immediately in the system Gallery app

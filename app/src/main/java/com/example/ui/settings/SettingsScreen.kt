@@ -1,5 +1,10 @@
 package com.example.ui.settings
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,22 +31,29 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.FilterHdr
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Note
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -61,10 +73,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.documentfile.provider.DocumentFile
 import com.example.model.AltitudeUnit
 import com.example.model.CoordinateFormat
 import com.example.model.MapStyle
@@ -75,8 +89,10 @@ import com.example.ui.components.StampOverlayView
 import com.example.ui.theme.Amber400
 import com.example.ui.theme.Cyan400
 import com.example.ui.theme.Cyan500
+import com.example.ui.theme.Emerald500
 import com.example.ui.theme.Slate200
 import com.example.ui.theme.Slate400
+import com.example.ui.theme.Slate700
 import com.example.ui.theme.Slate800
 import com.example.ui.theme.Slate900
 import com.example.ui.theme.Slate950
@@ -90,13 +106,31 @@ fun SettingsScreen(
 ) {
     val stampConfig by viewModel.stampConfig.collectAsState()
     val locationData by viewModel.locationData.collectAsState()
+    val context = LocalContext.current
+
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(uri, takeFlags)
+            } catch (e: Exception) {
+                // Ignore if not supported on virtual environments
+            }
+            val doc = DocumentFile.fromTreeUri(context, uri)
+            val displayName = doc?.name ?: uri.lastPathSegment ?: "Custom Folder"
+            viewModel.setCustomFolderTree(uri, displayName)
+            Toast.makeText(context, "Save location set to: $displayName", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        "Stamp Customization",
+                        "Camera & Stamp Settings",
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
@@ -125,9 +159,112 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Live Preview Card
+            // Live GPS Status & Verification Card
             item {
                 Spacer(modifier = Modifier.height(4.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Slate900,
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (locationData.isLiveFix && !stampConfig.useManualLocation) Emerald500.copy(alpha = 0.5f) else Slate800
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (locationData.isLiveFix) Icons.Default.MyLocation else Icons.Default.GpsFixed,
+                                    contentDescription = null,
+                                    tint = if (stampConfig.useManualLocation) Amber400 else if (locationData.isLiveFix) Emerald500 else Cyan400,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (stampConfig.useManualLocation) {
+                                        "MANUAL / SIMULATED LOCATION"
+                                    } else if (locationData.isLiveFix) {
+                                        "LIVE GPS FIX ACTIVE (Continuous)"
+                                    } else {
+                                        "ACQUIRING GPS SATELLITE FIX..."
+                                    },
+                                    color = if (stampConfig.useManualLocation) Amber400 else if (locationData.isLiveFix) Emerald500 else Cyan400,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = if (locationData.addressLine.isNotBlank()) locationData.addressLine else "Searching location via GPS satellites & network...",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Lat: ${locationData.latitude} • Lng: ${locationData.longitude} • Alt: ${locationData.altitudeMeters.toInt()}m (±${locationData.accuracyMeters.toInt()}m)",
+                            color = Slate400,
+                            fontSize = 12.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    try {
+                                        val mapUri = Uri.parse("geo:${locationData.latitude},${locationData.longitude}?q=${locationData.latitude},${locationData.longitude}(GPS+Camera+Location)")
+                                        val mapIntent = Intent(Intent.ACTION_VIEW, mapUri).apply {
+                                            setPackage("com.google.android.apps.maps")
+                                        }
+                                        if (mapIntent.resolveActivity(context.packageManager) != null) {
+                                            context.startActivity(mapIntent)
+                                        } else {
+                                            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${locationData.latitude},${locationData.longitude}"))
+                                            context.startActivity(webIntent)
+                                        }
+                                    } catch (e: Exception) {
+                                        val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${locationData.latitude},${locationData.longitude}"))
+                                        context.startActivity(webIntent)
+                                    }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("settings_verify_maps_button")
+                            ) {
+                                Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(16.dp), tint = Cyan400)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Verify on Map", fontSize = 12.sp, color = Cyan400)
+                            }
+
+                            Button(
+                                onClick = {
+                                    viewModel.refreshLocation()
+                                    Toast.makeText(context, "Acquiring fresh GPS satellite fix...", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Slate800),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("settings_refresh_gps_button")
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Refresh Fix", fontSize = 12.sp, color = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Live Preview Card
+            item {
                 Text(
                     text = "LIVE STAMP PREVIEW",
                     color = Cyan400,
@@ -486,9 +623,93 @@ fun SettingsScreen(
                 }
             }
 
-            // Section 8: Storage & Gallery Folder Configuration
+            // Section 8: Storage & Custom Save Location
             item {
-                SettingsSectionCard(title = "Photo Storage & Gallery Location", icon = Icons.Default.Folder) {
+                SettingsSectionCard(title = "Photo Storage & Save Location", icon = Icons.Default.Folder) {
+                    Text(
+                        text = "Choose the exact folder on your phone where captured GPS photos are saved.",
+                        color = Slate400,
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Currently selected folder card
+                    val customFolderUri = stampConfig.customFolderTreeUri
+                    val customFolderName = stampConfig.customFolderDisplayName
+                    Surface(
+                        color = Slate950,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (customFolderUri != null) Cyan400 else Slate800
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = if (customFolderUri != null) "CUSTOM SAVE FOLDER (ACTIVE)" else "DEFAULT SAVE LOCATION",
+                                color = if (customFolderUri != null) Cyan400 else Slate400,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.FolderOpen,
+                                    contentDescription = null,
+                                    tint = if (customFolderUri != null) Cyan400 else Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (customFolderUri != null) {
+                                        customFolderName ?: "User Selected Folder"
+                                    } else {
+                                        "Pictures/${stampConfig.customFolderName.ifBlank { "GPSMapCamera" }}"
+                                    },
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Button to Choose Save Location via SAF System Picker
+                    Button(
+                        onClick = { folderPickerLauncher.launch(null) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Cyan500),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("choose_folder_saf_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FolderOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Choose Save Location (System File Picker)", fontWeight = FontWeight.Bold)
+                    }
+
+                    if (customFolderUri != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.clearCustomFolderTree()
+                                Toast.makeText(context, "Reset to default Pictures directory", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("reset_save_folder_button")
+                        ) {
+                            Text("Reset to Default (Pictures/GPSMapCamera)", color = Slate200)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
                     SettingToggleRow(
                         title = "Auto-Save to Phone Gallery",
                         subtitle = "Makes captured photos appear immediately in Android Photos/Gallery app",
@@ -499,7 +720,7 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "Custom Storage Folder Name",
+                        text = "Custom Folder Name Inside Pictures",
                         color = Slate400,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
