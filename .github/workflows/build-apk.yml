@@ -37,8 +37,13 @@ jobs:
 
       - name: Prepare Secrets and Signing
         run: |
-          # Create .env with secret from GitHub Secrets if configured, or empty default
-          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
+          # Write GEMINI_API_KEY into .env with double quotes so javac never receives an unquoted empty assignment
+          KEY="${{ secrets.GEMINI_API_KEY }}"
+          if [ -z "$KEY" ]; then
+            KEY="AIzaSyDummyKeyForBuildVerification"
+          fi
+          echo "GEMINI_API_KEY=$KEY" > .env
+          echo "GEMINI_API_KEY=$KEY" > .env.example
 
           # Restore debug keystore from base64 if present, or generate a valid debug keystore
           if [ -s "debug.keystore.base64" ]; then
