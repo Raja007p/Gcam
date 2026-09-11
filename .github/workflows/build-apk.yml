@@ -24,29 +24,20 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: 11076708
-
-      - name: Accept Android SDK Licenses and Pre-install Platforms
-        run: |
-          mkdir -p "$ANDROID_HOME/licenses" || true
-          printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
-          printf "\n84831b9409646a2a0e28f31897321e90538a0f28" >> "$ANDROID_HOME/licenses/android-sdk-license"
-          printf "\nd97546487457339007802825d960db653823773e" >> "$ANDROID_HOME/licenses/android-sdk-license"
-          printf "\n856480766d35b84776611a44a6e81211459d9497" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
-          yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" || true
 
       - name: Prepare build environment
         run: |
           touch .env
           echo "GEMINI_API_KEY=" > .env
 
-          # Restore or generate debug keystore
-          if [ -f "debug.keystore.base64" ]; then
+          # Accept all Android licenses
+          yes | sdkmanager --licenses || true
+
+          # Restore debug keystore from base64 if present, or create standard debug keystore
+          if [ -s "debug.keystore.base64" ]; then
             base64 -d debug.keystore.base64 > debug.keystore || true
           fi
-          if [ ! -f "debug.keystore" ]; then
+          if [ ! -s "debug.keystore" ]; then
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
@@ -60,14 +51,11 @@ jobs:
 
       - name: Build Debug APK
         run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace -Dorg.gradle.jvmargs="-Xmx3072m -Dfile.encoding=UTF-8"
+          ./gradlew assembleDebug --no-daemon --stacktrace --no-configuration-cache
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: gpsmapcamera-debug-apk
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/reports/
+          path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
