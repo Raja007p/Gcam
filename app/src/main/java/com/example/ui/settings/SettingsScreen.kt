@@ -25,11 +25,13 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.FilterHdr
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Note
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerticalAlignBottom
@@ -478,6 +480,65 @@ fun SettingsScreen(
                                 },
                                 label = { Text("Alt (m)") },
                                 modifier = Modifier.weight(0.7f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Section 8: Storage & Gallery Folder Configuration
+            item {
+                SettingsSectionCard(title = "Photo Storage & Gallery Location", icon = Icons.Default.Folder) {
+                    SettingToggleRow(
+                        title = "Auto-Save to Phone Gallery",
+                        subtitle = "Makes captured photos appear immediately in Android Photos/Gallery app",
+                        checked = stampConfig.saveToGallery,
+                        onCheckedChange = { viewModel.updateConfig(stampConfig.copy(saveToGallery = it)) },
+                        testTag = "toggle_save_to_gallery"
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "Custom Storage Folder Name",
+                        color = Slate400,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Pictures/${stampConfig.customFolderName.ifBlank { "GPSMapCamera" }}",
+                        color = Cyan400,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = stampConfig.customFolderName,
+                        onValueChange = { newFolder ->
+                            viewModel.updateConfig(stampConfig.copy(customFolderName = newFolder))
+                        },
+                        label = { Text("Album / Folder Name") },
+                        placeholder = { Text("e.g. GPSMapCamera, SurveyPhotos, FieldWork") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("custom_folder_input")
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("Quick Presets:", color = Slate400, fontSize = 11.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val folderPresets = listOf("GPSMapCamera", "FieldVisits", "SiteInspection", "TravelGPS", "Survey2026")
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(folderPresets) { folder ->
+                            FilterChip(
+                                selected = stampConfig.customFolderName == folder,
+                                onClick = { viewModel.updateConfig(stampConfig.copy(customFolderName = folder)) },
+                                label = { Text(folder, fontSize = 12.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Cyan500,
+                                    selectedLabelColor = Color.White
+                                )
                             )
                         }
                     }

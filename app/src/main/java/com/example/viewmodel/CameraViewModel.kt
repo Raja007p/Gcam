@@ -1,12 +1,16 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -236,13 +240,37 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 currentConfig
             )
 
-            // Save stamped photo permanently
-            val outputDir = getOutputDirectory(context)
+            // Save stamped photo permanently to app storage (custom folder)
+            val outputDir = getOutputDirectory(context, currentConfig.customFolderName)
             val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-            val stampedFile = File(outputDir, "GPS_STAMP_${timeStamp}.jpg")
+            val fileName = "GPS_${timeStamp}.jpg"
+            val stampedFile = File(outputDir, fileName)
 
             FileOutputStream(stampedFile).use { out ->
-                stampedBitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+                stampedBitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+            }
+
+            // Also export directly to user device's Gallery (DCIM/Pictures) so it appears immediately in the system Gallery app
+            if (currentConfig.saveToGallery) {
+                savePhotoToMediaStore(
+                    context = context,
+                    bitmap = stampedBitmap,
+                    fileName = fileName,
+                    folderName = currentConfig.customFolderName,
+                    location = currentLocation
+                )
+            }
+
+            // Broadcast to Android media scanner so file explorer and gallery pick up the new photo
+            try {
+                MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(stampedFile.absolutePath),
+                    arrayOf("image/jpeg"),
+                    null
+                )
+            } catch (e: Exception) {
+                Log.w("CameraViewModel", "Media scanner scan failed: ${e.message}")
             }
 
             stampedBitmap.recycle()
@@ -267,6 +295,45 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             photoRecord
         }
 
+    private fun savePhotoToMediaStore(
+        context: Context,
+        bitmap: Bitmap,
+        fileName: String,
+        folderName: String,
+        location: LocationData
+    ) {
+        try {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000)
+                put(MediaStore.Images.Media.DATE_TAKEN, System.currentTimeMillis())
+                put(MediaStore.Images.Media.LATITUDE, location.latitude)
+                put(MediaStore.Images.Media.LONGITUDE, location.longitude)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val relativePath = "${Environment.DIRECTORY_PICTURES}/${folderName.ifBlank { "GPSMapCamera" }}"
+                    put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { outStream ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 95, outStream)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    contentValues.clear()
+                    contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    resolver.update(uri, contentValues, null, null)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("CameraViewModel", "Error saving to MediaStore gallery: ${e.message}", e)
+        }
+    }
+
     private fun rotateBitmap(bitmap: Bitmap, orientation: Int): Bitmap {
         val matrix = Matrix()
         when (orientation) {
@@ -280,9 +347,22 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
-    private fun getOutputDirectory(context: Context): File {
+    private fun getOutputDirectory(context: Context, folderName: String = "GPSMapCamera"): File {
+        val sanitizedFolder = folderName.trim().ifEmpty { "GPSMapCamera" }
+            .replace(Regex("[^a-zA-Z0-9._-]"), "_")
+        
+        // Priority 1: Public external Pictures directory
+        val publicPics = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        if (publicPics != null) {
+            val customDir = File(publicPics, sanitizedFolder)
+            if (customDir.exists() || customDir.mkdirs()) {
+                return customDir
+            }
+        }
+
+        // Priority 2: App external files dir
         val mediaDir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)?.let {
-            File(it, "GPSMapCamera").apply { mkdirs() }
+            File(it, sanitizedFolder).apply { mkdirs() }
         }
         return if (mediaDir != null && mediaDir.exists()) mediaDir else context.filesDir
     }

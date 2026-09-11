@@ -2,7 +2,9 @@ package com.example.ui.camera
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -43,6 +45,7 @@ import androidx.compose.material.icons.filled.FlashAuto
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Settings
@@ -62,6 +65,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -161,6 +165,19 @@ fun CameraScreen(
         }
     }
 
+    // Automatically request permissions on launch if not granted
+    LaunchedEffect(Unit) {
+        if (!hasCameraPermission || !hasLocationPermission) {
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
     // Collect UI events (e.g. photo saved)
     LaunchedEffect(Unit) {
         viewModel.uiEvents.collect { event ->
@@ -183,54 +200,57 @@ fun CameraScreen(
     ) {
         // Camera Viewfinder or Permission Prompt
         if (hasCameraPermission) {
-            AndroidView(
-                factory = { ctx ->
-                    val view = PreviewView(ctx).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                        scaleType = PreviewView.ScaleType.FILL_CENTER
-                    }
-                    previewView = view
-
-                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                    cameraProviderFuture.addListener({
-                        try {
-                            val cameraProvider = cameraProviderFuture.get()
-                            val preview = Preview.Builder().build().also {
-                                it.setSurfaceProvider(view.surfaceProvider)
-                            }
-
-                            val capture = ImageCapture.Builder()
-                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                                .setFlashMode(flashMode)
-                                .build()
-                            imageCapture = capture
-
-                            val selector = CameraSelector.Builder()
-                                .requireLensFacing(lensFacing)
-                                .build()
-
-                            cameraProvider.unbindAll()
-                            cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                selector,
-                                preview,
-                                capture
+            // Re-bind camera whenever lensFacing changes
+            key(lensFacing) {
+                AndroidView(
+                    factory = { ctx ->
+                        val view = PreviewView(ctx).apply {
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
                             )
-                        } catch (e: Exception) {
-                            e.printStackTrace()
+                            scaleType = PreviewView.ScaleType.FILL_CENTER
                         }
-                    }, ContextCompat.getMainExecutor(ctx))
+                        previewView = view
 
-                    view
-                },
-                update = {
-                    imageCapture?.flashMode = flashMode
-                },
-                modifier = Modifier.fillMaxSize()
-            )
+                        val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                        cameraProviderFuture.addListener({
+                            try {
+                                val cameraProvider = cameraProviderFuture.get()
+                                val preview = Preview.Builder().build().also {
+                                    it.setSurfaceProvider(view.surfaceProvider)
+                                }
+
+                                val capture = ImageCapture.Builder()
+                                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                                    .setFlashMode(flashMode)
+                                    .build()
+                                imageCapture = capture
+
+                                val selector = CameraSelector.Builder()
+                                    .requireLensFacing(lensFacing)
+                                    .build()
+
+                                cameraProvider.unbindAll()
+                                cameraProvider.bindToLifecycle(
+                                    lifecycleOwner,
+                                    selector,
+                                    preview,
+                                    capture
+                                )
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }, ContextCompat.getMainExecutor(ctx))
+
+                        view
+                    },
+                    update = {
+                        imageCapture?.flashMode = flashMode
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         } else {
             // Simulated Viewfinder & Permission Request Card
             Box(
@@ -347,7 +367,7 @@ fun CameraScreen(
                     .testTag("gps_status_pill")
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -372,12 +392,43 @@ fun CameraScreen(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Verify Location on Google Maps
+                IconButton(
+                    onClick = {
+                        try {
+                            val mapUri = Uri.parse("geo:${locationData.latitude},${locationData.longitude}?q=${locationData.latitude},${locationData.longitude}(GPS+Camera+Location)")
+                            val mapIntent = Intent(Intent.ACTION_VIEW, mapUri).apply {
+                                setPackage("com.google.android.apps.maps")
+                            }
+                            if (mapIntent.resolveActivity(context.packageManager) != null) {
+                                context.startActivity(mapIntent)
+                            } else {
+                                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${locationData.latitude},${locationData.longitude}"))
+                                context.startActivity(webIntent)
+                            }
+                        } catch (e: Exception) {
+                            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${locationData.latitude},${locationData.longitude}"))
+                            context.startActivity(webIntent)
+                        }
+                    },
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(Color(0x66000000), CircleShape)
+                        .testTag("verify_google_maps_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Map,
+                        contentDescription = "Verify on Google Maps",
+                        tint = Cyan400
+                    )
+                }
+
                 // Switch Lens (Front/Back)
                 IconButton(
                     onClick = { viewModel.toggleCamera() },
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(42.dp)
                         .background(Color(0x66000000), CircleShape)
                         .testTag("switch_camera_button")
                 ) {
@@ -392,7 +443,7 @@ fun CameraScreen(
                 IconButton(
                     onClick = onNavigateToSettings,
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(42.dp)
                         .background(Color(0x66000000), CircleShape)
                         .testTag("settings_button")
                 ) {

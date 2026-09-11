@@ -49,6 +49,10 @@ data class StampConfig(
     val stampPosition: StampPosition = StampPosition.BOTTOM,
     val bgStyle: StampBgStyle = StampBgStyle.TRANSLUCENT_DARK,
 
+    // Storage and Gallery Customization
+    val customFolderName: String = "GPSMapCamera",
+    val saveToGallery: Boolean = true,
+
     // Manual / Mock Location Test Mode (Great for emulators and indoors)
     val useManualLocation: Boolean = false,
     val manualLatitude: Double = 35.434008,

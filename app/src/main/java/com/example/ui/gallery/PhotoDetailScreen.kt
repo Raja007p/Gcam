@@ -1,5 +1,7 @@
 package com.example.ui.gallery
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.FilterHdr
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Note
 import androidx.compose.material.icons.filled.Schedule
@@ -34,6 +37,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -116,6 +120,32 @@ fun PhotoDetailScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            try {
+                                val mapUri = Uri.parse("geo:${photo.latitude},${photo.longitude}?q=${photo.latitude},${photo.longitude}(Captured+Location)")
+                                val mapIntent = Intent(Intent.ACTION_VIEW, mapUri).apply {
+                                    setPackage("com.google.android.apps.maps")
+                                }
+                                if (mapIntent.resolveActivity(context.packageManager) != null) {
+                                    context.startActivity(mapIntent)
+                                } else {
+                                    val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${photo.latitude},${photo.longitude}"))
+                                    context.startActivity(webIntent)
+                                }
+                            } catch (e: Exception) {
+                                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${photo.latitude},${photo.longitude}"))
+                                context.startActivity(webIntent)
+                            }
+                        },
+                        modifier = Modifier.testTag("detail_google_maps_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Map,
+                            contentDescription = "Open in Google Maps",
+                            tint = Cyan400
+                        )
+                    }
                     IconButton(
                         onClick = { viewModel.sharePhoto(context, photo) },
                         modifier = Modifier.testTag("detail_share_button")
@@ -253,6 +283,36 @@ fun PhotoDetailScreen(
                         fontSize = 10.sp,
                         maxLines = 2
                     )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                val mapUri = Uri.parse("geo:${photo.latitude},${photo.longitude}?q=${photo.latitude},${photo.longitude}(Captured+Location)")
+                                val mapIntent = Intent(Intent.ACTION_VIEW, mapUri).apply {
+                                    setPackage("com.google.android.apps.maps")
+                                }
+                                if (mapIntent.resolveActivity(context.packageManager) != null) {
+                                    context.startActivity(mapIntent)
+                                } else {
+                                    val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${photo.latitude},${photo.longitude}"))
+                                    context.startActivity(webIntent)
+                                }
+                            } catch (e: Exception) {
+                                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${photo.latitude},${photo.longitude}"))
+                                context.startActivity(webIntent)
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("verify_location_google_maps_btn"),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Cyan400),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Cyan400.copy(alpha = 0.6f))
+                    ) {
+                        Icon(imageVector = Icons.Default.Map, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Verify Location on Google Maps", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
                 }
             }
 

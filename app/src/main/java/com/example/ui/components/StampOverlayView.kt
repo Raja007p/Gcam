@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +60,7 @@ fun StampOverlayView(
     modifier: Modifier = Modifier,
     onEditNoteClick: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
     val isLight = config.bgStyle == StampBgStyle.FROSTED_LIGHT
     val bgColor = when (config.bgStyle) {
         StampBgStyle.TRANSLUCENT_DARK -> Color(0xDD0F172A)
@@ -126,11 +130,28 @@ fun StampOverlayView(
 
                     Image(
                         bitmap = miniMapBitmap.asImageBitmap(),
-                        contentDescription = "Mini Map with GPS Pin",
+                        contentDescription = "Mini Map with GPS Pin - Tap to open Google Maps",
                         modifier = Modifier
                             .size(90.dp)
                             .clip(RoundedCornerShape(6.dp))
                             .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                            .clickable {
+                                try {
+                                    val mapUri = Uri.parse("geo:${location.latitude},${location.longitude}?q=${location.latitude},${location.longitude}(GPS+Camera+Location)")
+                                    val mapIntent = Intent(Intent.ACTION_VIEW, mapUri).apply {
+                                        setPackage("com.google.android.apps.maps")
+                                    }
+                                    if (mapIntent.resolveActivity(context.packageManager) != null) {
+                                        context.startActivity(mapIntent)
+                                    } else {
+                                        val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}"))
+                                        context.startActivity(webIntent)
+                                    }
+                                } catch (e: Exception) {
+                                    val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}"))
+                                    context.startActivity(webIntent)
+                                }
+                            }
                     )
                 }
             }
